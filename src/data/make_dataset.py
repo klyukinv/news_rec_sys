@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 import click
 import logging
+import gzip
+import shutil
+
 from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
 
@@ -14,6 +17,12 @@ def main(input_filepath, output_filepath):
     """
     logger = logging.getLogger(__name__)
     logger.info('making final data set from raw data')
+    filenames = ['items.json.gz', 'train.json.gz']
+    for filename_arch in filenames:
+        with gzip.open(input_filepath + '/' + filename_arch, 'rb') as f_in:
+            filename_new = output_filepath + '/' + '.'.join(filename_arch.split('.')[:-1])
+            with open(filename_new, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
 
 
 if __name__ == '__main__':
