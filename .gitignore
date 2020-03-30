@@ -91,3 +91,8 @@ target/
 
 # predictions
 *.csv
+
+# large data
+*.json
+*.npy
+*.npz
