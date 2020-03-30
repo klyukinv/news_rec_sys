@@ -1,3 +1,6 @@
+matplotlib
+numpy
+scikit-learn
 # local package
 -e .
 
