@@ -1,3 +1,6 @@
+tensorboardX
+pandas
+torch
 matplotlib
 numpy
 scikit-learn
