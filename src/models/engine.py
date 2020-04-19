@@ -1,9 +1,29 @@
 import torch
+import sys
+import numpy as np
 from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
-from .utils import save_checkpoint, use_optimizer
-from ..metrics.evaluation import MetronAtK
+from utils import save_checkpoint, use_optimizer
 
+sys.path.append('..')
+
+from metrics.evaluation import MetronAtK
+
+
+class UserItemDataset(Dataset):
+    """Wrapper, convert <user, item> Tensor into Pytorch Dataset"""
+
+    def __init__(self, user_tensor, item_tensor):
+        self.user_tensor = user_tensor
+        self.item_tensor = item_tensor
+
+    def __getitem__(self, index):
+        return self.user_tensor[index], self.item_tensor[index]
+
+    def __len__(self):
+        return self.user_tensor.size(0)
 
 class Engine(object):
     """Meta Engine for training & evaluating NCF model
@@ -12,7 +32,7 @@ class Engine(object):
 
     def __init__(self, config):
         self.config = config  # model configuration
-        self._metron = MetronAtK(top_k=10)
+        self._metron = MetronAtK(top_k=20)
         self._writer = SummaryWriter(log_dir='runs/{}'.format(config['alias']))  # tensorboard writer
         self._writer.add_text('config', str(config), 0)
         self.opt = use_optimizer(self.model, config)
@@ -53,27 +73,50 @@ class Engine(object):
             if self.config['use_cuda']:
                 test_users = test_users.cuda()
                 test_items = test_items.cuda()
-                negative_users = negative_users.cuda()
-                negative_items = negative_items.cuda()
-            test_scores = self.model(test_users, test_items)
-            negative_scores = self.model(negative_users, negative_items)
+                
+            test_dataset = UserItemDataset(test_users, test_items)
+            test_dataloader = DataLoader(test_dataset, batch_size=self.config['batch_size'])
+            test_scores = []
+            with tqdm(total=len(test_dataloader)) as pbar:
+                for i, (test_users_batch, test_items_batch) in enumerate(test_dataloader):
+                    test_scores.append(self.model(test_users_batch, test_items_batch).cpu().numpy().reshape(-1))
+                    pbar.update()
+                                       
+            test_scores = np.concatenate(test_scores, axis=0)
+            test_scores = list(test_scores)
+                    
             if self.config['use_cuda']:
                 test_users = test_users.cpu()
                 test_items = test_items.cpu()
-                test_scores = test_scores.cpu()
+                negative_users = negative_users.cuda()
+                negative_items = negative_items.cuda()
+            
+            negative_dataset = UserItemDataset(negative_users, negative_items)
+            negative_dataloader = DataLoader(negative_dataset, batch_size=self.config['batch_size'])
+            negative_scores = []
+            
+            with tqdm(total=len(negative_dataloader)) as pbar:
+                for neg_users_batch, neg_items_batch in negative_dataloader:
+                    negative_scores.append(self.model(neg_users_batch, neg_items_batch).cpu().numpy().reshape(-1))
+                    pbar.update()
+                    
+            torch.cuda.empty_cache()
+            negative_scores = np.concatenate(negative_scores, axis=0)
+            negative_scores = list(negative_scores)
+                
+            if self.config['use_cuda']:
                 negative_users = negative_users.cpu()
                 negative_items = negative_items.cpu()
-                negative_scores = negative_scores.cpu()
             self._metron.subjects = [test_users.data.view(-1).tolist(),
                                      test_items.data.view(-1).tolist(),
-                                     test_scores.data.view(-1).tolist(),
+                                     test_scores,
                                      negative_users.data.view(-1).tolist(),
                                      negative_items.data.view(-1).tolist(),
-                                     negative_scores.data.view(-1).tolist()]
+                                     negative_scores]
         hit_ratio, ndcg = self._metron.cal_hit_ratio(), self._metron.cal_ndcg()
         self._writer.add_scalar('performance/HR', hit_ratio, epoch_id)
         self._writer.add_scalar('performance/NDCG', ndcg, epoch_id)
-        print('[Evluating Epoch {}] HR = {:.4f}, NDCG = {:.4f}'.format(epoch_id, hit_ratio, ndcg))
+        print('[Evaluating Epoch {}] HR = {:.4f}, NDCG = {:.4f}'.format(epoch_id, hit_ratio, ndcg))
         return hit_ratio, ndcg
 
     def save(self, alias, epoch_id, hit_ratio, ndcg):

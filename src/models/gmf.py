@@ -1,11 +1,12 @@
 import torch
-from .engine import Engine
-from .utils import use_cuda
+from engine import Engine
+from utils import use_cuda, resume_checkpoint
 
 
 class GMF(torch.nn.Module):
     def __init__(self, config):
         super(GMF, self).__init__()
+        self.config = config
         self.num_users = config['num_users']
         self.num_items = config['num_items']
         self.latent_dim = config['latent_dim']
@@ -26,6 +27,13 @@ class GMF(torch.nn.Module):
 
     def init_weight(self):
         pass
+    
+    def load_pretrain_weights(self):
+        """Loading weights from trained GMF model"""
+        config = self.config
+        if config['use_cuda']:
+            self.cuda()
+        resume_checkpoint(self, model_dir=config['pretrain_mf'], device_id=config['device_id'])
 
 
 class GMFEngine(Engine):
@@ -33,7 +41,11 @@ class GMFEngine(Engine):
 
     def __init__(self, config):
         self.model = GMF(config)
-        if config['use_cuda'] is True:
+        if config['use_cuda']:
             use_cuda(True, config['device_id'])
             self.model.cuda()
+      
         super(GMFEngine, self).__init__(config)
+        
+        if config.get('pretrain', False):
+            self.model.load_pretrain_weights()

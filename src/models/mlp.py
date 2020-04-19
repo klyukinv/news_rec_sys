@@ -1,7 +1,7 @@
 import torch
-from .gmf import GMF
-from .engine import Engine
-from .utils import use_cuda, resume_checkpoint
+from gmf import GMF
+from engine import Engine
+from utils import use_cuda, resume_checkpoint
 
 
 class MLP(torch.nn.Module):
@@ -23,7 +23,7 @@ class MLP(torch.nn.Module):
             self.fc_layers.append(torch.nn.Linear(in_size, out_size))
             self.bn_layers.append(torch.nn.BatchNorm1d(out_size))
             self.relu_layers.append(torch.nn.ReLU(inplace=True))
-            self.relu_layers.append(torch.nn.Dropout(p=0.2))
+            self.do_layers.append(torch.nn.Dropout(p=0.2))
 
         self.affine_output = torch.nn.Linear(in_features=config['layers'][-1], out_features=1)
         self.logistic = torch.nn.Sigmoid()
@@ -59,7 +59,7 @@ class MLPEngine(Engine):
     """Engine for training & evaluating GMF model"""
     def __init__(self, config):
         self.model = MLP(config)
-        if config['use_cuda'] is True:
+        if config['use_cuda']:
             use_cuda(True, config['device_id'])
             self.model.cuda()
         super(MLPEngine, self).__init__(config)
